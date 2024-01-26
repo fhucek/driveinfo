@@ -37,35 +37,19 @@ impl fmt::Display for DriveInfo {
     }
 }
 
-// does the equivalent of #[derive(Serialize)]
-// impl Serialize for DriveInfo {
-//     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-//     where
-//         S: Serializer
-//         {
-//             let mut drive = serializer.serialize_struct("DriveInfo", 6)?;
-//             drive.serialize_field("filesystem", &self.filesystem)?;
-//             drive.serialize_field("mount_point", &self.mount_point)?;
-//             drive.serialize_field("size", &self.size)?;
-//             drive.serialize_field("used", &self.used)?;
-//             drive.serialize_field("avail", &self.avail)?;
-//             drive.serialize_field("percent_used", &self.percent_used)?;
-//             drive.end()
-//         }
-// }
 
 
 impl DriveInfo {
     pub fn json() -> std::result::Result<String, Box<dyn Error>>{
-        let drives = DriveInfo::parse_all_drives()?;
+        let drives = DriveInfo::parse_all_drives(true)?;
 
         // let json_drive_string = serde_json::to_string(&DriveInfo::new(String::from("hi")))?;
         let json_drive_string = serde_json::to_string(&drives)?;
         Ok(json_drive_string)
     }
 
-    pub fn pretty_print() -> std::result::Result<(), Box<dyn Error>> {
-        let drives = DriveInfo::parse_all_drives()?;
+    pub fn pretty_print(show_all_drives: bool) -> std::result::Result<(), Box<dyn Error>> {
+        let drives = DriveInfo::parse_all_drives(show_all_drives)?;
 
 
         let mount_point_spacing = DriveInfo::find_longest_string_length(
@@ -85,7 +69,7 @@ impl DriveInfo {
         );
 
         for drive in drives {
-            let percent_used: i32 = drive.percent_used.replace("%", "").parse()?;
+            let percent_used: i32 = (drive.percent_used.replace("%", "").parse()).unwrap_or(0);
 
             let mnt_pt = DriveInfo::insert_spacing(mount_point_spacing, drive.mount_point);
             let fs =  DriveInfo::insert_spacing(filesystem_spacing, drive.filesystem);
@@ -102,7 +86,7 @@ impl DriveInfo {
                 (style(percent).bold().red(), style(avail).bold().red())
             };
 
-            println!("{}\tUsed: {} {}/{}\t{}",
+            println!("{}\tUsed: {}\t{}/{} available\t{}",
                     style(mnt_pt).bold().cyan(),
                     formatted_percent,
                     formatted_avail,
@@ -145,7 +129,7 @@ impl DriveInfo {
         let newdriveinfo : Vec<&str> = df_line.split(" ")
                                                 .filter(|string| *string != "")
                                                 .collect();
-                                        
+        // use regex instead                          
         if newdriveinfo.len() == 6 {
             let fsname = newdriveinfo.get(0)?;
             let size = newdriveinfo.get(1)?;
@@ -168,13 +152,17 @@ impl DriveInfo {
         
     }
 
-    fn parse_all_drives() -> std::result::Result<Vec<DriveInfo>, Box<dyn Error>> {
+    fn parse_all_drives(show_all_drives: bool) -> std::result::Result<Vec<DriveInfo>, Box<dyn Error>> {
 
         let df_proc = Command::new("df").arg("-H").output()?;
         let df_out = String::from_utf8(df_proc.stdout)?;
         let drive_info_list : Vec<DriveInfo> = df_out.split("\n")
-                                                        .filter( |string | { 
-                                                            (**string).contains("/dev") && !(**string).contains("tmpfs") &&  !(**string).contains("boot") 
+                                                        .filter( | string | {
+                                                            if !show_all_drives{
+                                                                (**string).contains("/dev/sd")
+                                                            } else {
+                                                                !(**string).contains("Filesystem") && !((*string) == "")
+                                                            }
                                                         })
                                                         .map(|line| {
                                                             match DriveInfo::parse_df_line(line) {
